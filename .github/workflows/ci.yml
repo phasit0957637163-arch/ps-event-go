@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - name: Install backend deps
+        working-directory: backend
+        run: |
+          if [ -f package.json ]; then npm ci --no-audit --no-fund; fi
+      - name: Install frontend deps
+        working-directory: frontend
+        run: |
+          if [ -f package.json ]; then npm ci --no-audit --no-fund; fi
+      - name: Quick build check (frontend)
+        working-directory: frontend
+        run: |
+          if npm run | grep -q build; then npm run build; else echo 'no build script'; fi
