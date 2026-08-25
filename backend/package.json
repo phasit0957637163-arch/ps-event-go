@@ -1,0 +1,22 @@
+{
+  "name": "ps-event-go-backend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch server.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "latest",
+    "dotenv": "latest",
+    "express": "latest",
+    "multer": "latest",
+    "pg": "latest",
+    "@aws-sdk/client-s3": "^3.500.0",
+    "@aws-sdk/lib-storage": "^3.500.0"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  }
+}

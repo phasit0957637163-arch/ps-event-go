@@ -1,0 +1,45 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Backend (server.js)",
+      "type": "pwa-node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/backend",
+      "runtimeExecutable": "node",
+      "program": "${workspaceFolder}/backend/server.js",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    },
+    {
+      "name": "Debug Frontend (npm run dev)",
+      "type": "pwa-node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
+    }
+    ,
+    {
+      "name": "Open Frontend in Chrome",
+      "type": "pwa-chrome",
+      "request": "launch",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/frontend",
+      "userDataDir": "${workspaceFolder}/.vscode/chrome-profile"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Run Full Stack (Frontend + Backend)",
+      "configurations": ["Debug Backend (server.js)", "Debug Frontend (npm run dev)"]
+    }
+    ,
+    {
+      "name": "Run Full Stack (Frontend + Backend + Browser)",
+      "configurations": ["Debug Backend (server.js)", "Debug Frontend (npm run dev)", "Open Frontend in Chrome"]
+    }
+  ]
+}
