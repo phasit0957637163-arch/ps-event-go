@@ -1,0 +1,37 @@
+คำสั่ง RUN WEB และ put ขึ้น GitHub 
+ โปรเจกต์นี้มี 3 ส่วน: Database, Backend และ Frontend
+
+1. เปิด Database ด้วย Docker
+เปิด Terminal ที่โฟลเดอร์โปรเจกต์:
+cd "C:\Users\IT Support\Desktop\PSCODE\ps-event-go-main"
+docker compose up -d
+
+2. รัน Backend
+เปิด Terminal ใหม่:
+cd "C:\Users\IT Support\Desktop\PSCODE\ps-event-go-main\backend"
+npm install
+npm run dev
+
+3. รัน Frontend
+เปิด Terminal ใหม่:
+cd "C:\Users\IT Support\Desktop\PSCODE\ps-event-go-main\frontend"
+npm install
+npm run dev
+
+จากนั้นเปิดเว็บที่:
+http://localhost:5173
+
+ถ้า port 5173 ถูกใช้งาน Vite อาจเปลี่ยนเป็น 5174 ให้ดู URL ที่แสดงใน Terminal
+
+หรือรัน Backend + Frontend พร้อมกันจาก root:
+cd "C:\Users\IT Support\Desktop\PSCODE\ps-event-go-main"
+npm run dev
+
+put ขึ้น GitHub 
+ลิงค์ PUT ขึ้น GitHub https://github.com/phasit0957637163-arch/ps-event-go.git 
+
+ถ้ามีการแก้โค้ดครั้งใหม่ ให้เปิด Terminal ที่โฟลเดอร์โปรเจกต์แล้วรัน:
+cd "C:\Users\IT Support\Desktop\PSCODE\ps-event-go-main"
+git add .
+git commit -m "update project"
+git push

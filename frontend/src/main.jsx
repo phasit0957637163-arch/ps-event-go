@@ -84,7 +84,7 @@ function Nav({isAdmin,setIsAdmin,visitor,onVisitorLogin,onVisitorLogout}){
     </nav>
     <div className="navActions">
       <button className="iconBtn">⌕</button>
-      <button className="loginBtn" onClick={()=>isAdmin?setIsAdmin(false):setShowLogin(true)}>{isAdmin?"ออกจากระบบ":userLabel}</button>
+      <button className="loginBtn" onClick={()=>isAdmin?setIsAdmin(false):setShowLogin(true)}>{isAdmin?"ออกจากระบบ":(visitor?visitor.name:"เข้าสู่ระบบ")}</button>
     </div>
   </header>
   {showLogin&&<VisitorLogin visitor={visitor} onLogin={user=>{onVisitorLogin(user);setShowLogin(false)}} onLogout={()=>{onVisitorLogout();setShowLogin(false)}} onAdminLogin={()=>{setShowLogin(false);setShowAdminLogin(true)}} onClose={()=>setShowLogin(false)}/>} 
@@ -178,8 +178,13 @@ function EventDetail({event,isAdmin,onBack}){
   const [editingCaptionId,setEditingCaptionId]=useState(null);
   const [captionDraft,setCaptionDraft]=useState('');
   const [dragIndex,setDragIndex]=useState(null);
+  const [gallerySource,setGallerySource]=useState(null);
+  const [lightboxImage,setLightboxImage]=useState(null);
   const fileInputRef = React.useRef(null);
   const [uploadSource,setUploadSource]=useState(null);
+  const galleryLabels={event:'รูปภาพ Event',atmosphere:'บรรยากาศ',activity:'กิจกรรม'};
+  const getGalleryImages=(source)=>savedImages.filter((image,index)=>image.gallery_section===source||(!image.gallery_section&&index%3===Object.keys(galleryLabels).indexOf(source)));
+  const openGallery=(source)=>setGallerySource(source);
   const triggerUpload = (source)=>{
     if(!isAdmin) return alert('ต้องเป็น Admin เพื่ออัปโหลดรูป');
     setUploadSource(source);
@@ -223,6 +228,21 @@ function EventDetail({event,isAdmin,onBack}){
     setSavedImages(arr);
     setDragIndex(null);
   };
+  const onGalleryDrop = async (e, source, to)=>{
+    e.preventDefault();
+    const from=Number(e.dataTransfer?.getData('gallery-index'));
+    if(!Number.isInteger(from)||from<0||from>=getGalleryImages(source).length||from===to) return;
+    const gallery=getGalleryImages(source);
+    const [moved]=gallery.splice(from,1);
+    gallery.splice(to,0,moved);
+    const galleryIds=new Set(gallery.map(image=>image.id));
+    let galleryPosition=0;
+    const reordered=savedImages.map(image=>galleryIds.has(image.id)?gallery[galleryPosition++]:image);
+    setSavedImages(reordered);
+    for(let i=0;i<gallery.length;i++){
+      try{await fetch(`${API_URL}/api/events/${event.id}/images/${gallery[i].id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({sort_order:i})});}catch(error){console.error(error)}
+    }
+  };
   const updateCaption = async (imageId, caption)=>{
     try{
       const r = await fetch(`${API_URL}/api/events/${event.id}/images/${imageId}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({caption})});
@@ -237,7 +257,7 @@ function EventDetail({event,isAdmin,onBack}){
         const res = await fetch(`${API_URL}/api/uploads`, { method: 'POST', body: fd });
         if(!res.ok) throw new Error('upload failed');
         const j = await res.json();
-        setImages(prev=>[...prev,{url:j.url,name:f.name}]);
+        setImages(prev=>[...prev,{url:j.url,name:f.name,source:uploadSource||'event'}]);
       }catch(e){console.error('upload error',e)}
     }
   };
@@ -250,10 +270,31 @@ function EventDetail({event,isAdmin,onBack}){
           <div className="panelHead"><div><span className="eyebrow">OUR EXPERIENCE</span><h2>ประสบการณ์ของ PS Event GO!</h2></div>{isAdmin&&<button className="editBtn" onClick={()=>setEdit(true)}>✎ Edit</button>}</div>
           <p>{text}</p>
           <div className="photoRow">
-            <div style={{cursor:isAdmin?'pointer':'default'}} onClick={()=>triggerUpload('event')}>📷 รูปภาพ Event</div>
-            <div style={{cursor:isAdmin?'pointer':'default'}} onClick={()=>triggerUpload('atmosphere')}>📷 บรรยากาศ</div>
-            <div style={{cursor:isAdmin?'pointer':'default'}} onClick={()=>triggerUpload('activity')}>📷 กิจกรรม</div>
+            {[['event','📷 รูปภาพ Event'],['atmosphere','📷 บรรยากาศ'],['activity','📷 กิจกรรม']].map(([source,label],index)=>{
+              const galleryImages=getGalleryImages(source);
+              return <div className="photoSlot" key={source} style={{cursor:'pointer'}} onClick={()=>openGallery(source)}>
+                {galleryImages.length>0?<><div className="photoSlotGallery">{galleryImages.map(image=><img key={image.id} src={image.image_url} alt={image.caption||label.replace('📷 ','')}/>)}</div><span className="photoSlotLabel">{label.replace('📷 ','')} · {galleryImages.length} รูป</span></>:label}
+              </div>;
+            })}
           </div>
+          {gallerySource&&<div className="modalBackdrop" onClick={()=>setGallerySource(null)}><section className="galleryModal" onClick={e=>e.stopPropagation()}>
+            <button className="modalClose" onClick={()=>setGallerySource(null)}>×</button>
+            <span className="eyebrow">PHOTO GALLERY</span>
+            <h2>{galleryLabels[gallerySource]}</h2>
+            {isAdmin&&<button className="btn primary" onClick={()=>triggerUpload(gallerySource)}>＋ เพิ่มรูปในอัลบั้ม</button>}
+            <div className="galleryGrid">
+              {getGalleryImages(gallerySource).map((im,index)=><figure key={im.id} className="galleryItem" draggable={isAdmin} onDragStart={e=>{e.dataTransfer.setData('gallery-index',String(index));}} onDragOver={e=>e.preventDefault()} onDrop={e=>isAdmin&&onGalleryDrop(e,gallerySource,index)}>
+                <button className="galleryImageButton" onClick={()=>setLightboxImage(im)} aria-label="ดูรูปภาพขนาดใหญ่"><img src={im.image_url} alt={im.caption||galleryLabels[gallerySource]}/></button>
+                {im.caption&&<figcaption>{im.caption}</figcaption>}
+                {isAdmin&&<div className="galleryItemActions"><small>ลากเพื่อเปลี่ยนตำแหน่ง</small><button className="galleryDeleteButton" onClick={e=>{e.stopPropagation();deleteImage(im.id)}}>ลบรูป</button></div>}
+              </figure>)}
+            {getGalleryImages(gallerySource).length===0&&<p className="emptyGallery">ยังไม่มีรูปในอัลบั้มนี้</p>}
+          </div></section></div>}
+          {lightboxImage&&<div className="lightboxBackdrop" onClick={()=>setLightboxImage(null)}><section className="lightbox" onClick={e=>e.stopPropagation()}>
+            <button className="modalClose" onClick={()=>setLightboxImage(null)} aria-label="ปิดรูปภาพ">×</button>
+            <img src={lightboxImage.image_url} alt={lightboxImage.caption||'รูปภาพขนาดใหญ่'}/>
+            {lightboxImage.caption&&<p>{lightboxImage.caption}</p>}
+          </section></div>}
           {edit&&<div className="editor"><h3>แก้ไขประสบการณ์</h3><textarea value={text} onChange={e=>setText(e.target.value)}/>
             <div style={{margin:'12px 0'}}>
               <input ref={fileInputRef} type="file" accept="image/*" multiple style={{display:'none'}} onChange={e=>{ uploadingFiles(e.target.files); e.target.value=null; }}/>
@@ -285,7 +326,7 @@ function EventDetail({event,isAdmin,onBack}){
               // save images to event_images
               try{
                 for(const im of images){
-                  const res = await fetch(`${API_URL}/api/events/${event.id}/images`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:im.url})});
+                  const res = await fetch(`${API_URL}/api/events/${event.id}/images`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:im.url,gallery_section:im.source||uploadSource||'event'})});
                   if(!res.ok) console.error('save image failed', await res.text());
                 }
                 // refresh saved images from server so UI shows newly saved items

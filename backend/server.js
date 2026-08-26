@@ -10,6 +10,7 @@ dotenv.config();
 const {Pool}=pg;
 const app=express();
 const pool=new Pool({connectionString:process.env.DATABASE_URL});
+const imageSchemaReady=pool.query('ALTER TABLE event_images ADD COLUMN IF NOT EXISTS gallery_section VARCHAR(30)').then(()=>pool.query("UPDATE event_images SET gallery_section='event' WHERE gallery_section IS NULL")).catch(e=>console.error('event_images migration error',e.message));
 // Ensure uploads folder exists and serve it
 const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
 import fs from 'fs';
@@ -77,10 +78,11 @@ app.post('/api/uploads', upload.single('file'), (req, res) => {
 // Save uploaded image URL to event_images
 app.post('/api/events/:id/images', async (req, res) => {
 	const { id } = req.params;
-	const { url, caption, sort_order } = req.body;
+	const { url, caption, sort_order, gallery_section } = req.body;
 	if (!url) return res.status(400).json({ error: 'url is required' });
 	try {
-		const r = await pool.query('INSERT INTO event_images(event_id,image_url,caption,sort_order) VALUES($1,$2,$3,$4) RETURNING *', [id, url, caption||null, sort_order||0]);
+		await imageSchemaReady;
+		const r = await pool.query('INSERT INTO event_images(event_id,image_url,caption,sort_order,gallery_section) VALUES($1,$2,$3,$4,$5) RETURNING *', [id, url, caption||null, sort_order||0, gallery_section||'event']);
 		res.status(201).json(r.rows[0]);
 	} catch (e) {
 		res.status(500).json({ error: e.message });
@@ -90,7 +92,8 @@ app.post('/api/events/:id/images', async (req, res) => {
 app.get('/api/events/:id/images', async (req, res) => {
 	const { id } = req.params;
 	try {
-		const r = await pool.query('SELECT id,event_id,image_url,caption,sort_order FROM event_images WHERE event_id=$1 ORDER BY sort_order, id', [id]);
+		await imageSchemaReady;
+		const r = await pool.query('SELECT id,event_id,image_url,caption,sort_order,gallery_section FROM event_images WHERE event_id=$1 ORDER BY sort_order, id', [id]);
 		res.json(r.rows);
 	} catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -100,7 +103,7 @@ app.patch('/api/events/:id/images/:imageId', async (req, res) => {
 	const { id, imageId } = req.params;
 	const { caption, sort_order } = req.body;
 	try {
-		const r = await pool.query('UPDATE event_images SET caption=$1, sort_order=$2 WHERE id=$3 AND event_id=$4 RETURNING id,event_id,image_url,caption,sort_order', [caption||null, sort_order||0, imageId, id]);
+		const r = await pool.query('UPDATE event_images SET caption=COALESCE($1,caption), sort_order=COALESCE($2,sort_order) WHERE id=$3 AND event_id=$4 RETURNING id,event_id,image_url,caption,sort_order,gallery_section', [caption, sort_order, imageId, id]);
 		if (r.rows.length === 0) return res.status(404).json({ error: 'not found' });
 		res.json(r.rows[0]);
 	} catch (e) { res.status(500).json({ error: e.message }); }
