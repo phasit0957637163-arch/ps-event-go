@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles/app.css";
 
-const events = [
+const initialEvents = [
   {id:1,title:"Thailand Game Show 2026",cat:"Gaming",date:"18–20 ต.ค. 2569",place:"QSNCC, กรุงเทพฯ",status:"attended",views:"18,542",rating:"4.8",desc:"มหกรรมเกมและไลฟ์สไตล์ รวมเกม เทคโนโลยี กิจกรรม และแบรนด์ชั้นนำ"},
   {id:2,title:"Techsauce Global Summit 2026",cat:"Technology",date:"30 ม.ค.–1 ก.พ. 2569",place:"QSNCC, กรุงเทพฯ",status:"planned",views:"12,421",rating:"4.6",desc:"งานรวมเทคโนโลยี สตาร์ทอัพ นักลงทุน และนวัตกรรมจากหลายประเทศ"},
   {id:3,title:"Thailand Coffee Fest 2026",cat:"Food & Beverage",date:"10–12 ก.ค. 2569",place:"ไบเทค บางนา",status:"planned",views:"9,821",rating:"4.9",desc:"เทศกาลกาแฟและวัฒนธรรมกาแฟที่รวมร้านคั่ว คาเฟ่ และผู้คนในวงการ"},
@@ -128,12 +128,43 @@ function Hero(){
   </section>
 }
 
-function EventCard({event,onOpen}){
+function EventCard({event,onOpen,isAdmin,onUpdate}){
+  const [editing,setEditing]=useState(false);
+  const [draft,setDraft]=useState(event);
+  const [saving,setSaving]=useState(false);
+  const [uploading,setUploading]=useState(false);
+  const coverInputRef=React.useRef(null);
   const open=()=>onOpen(event.id);
+  const coverStyle=event.coverImage?{backgroundImage:`linear-gradient(180deg, #070a1122 25%, #070a11dd 100%), url("${event.coverImage}")`,backgroundPosition:`${event.coverPositionX??50}% ${event.coverPositionY??50}%`}:{};
+  const updateDraft=(field,value)=>setDraft(current=>({...current,[field]:value}));
+  const save=async()=>{
+    setSaving(true);
+    try{
+      const response=await fetch(`${API_URL}/api/events/${event.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:draft.title,description:draft.desc,date:draft.date,place:draft.place,status:draft.status||'published'})});
+      if(!response.ok) throw new Error('event save failed');
+      onUpdate({...event,...draft}); setEditing(false);
+    }catch(error){alert('บันทึกข้อมูล Event ไม่สำเร็จ');console.error(error)}
+    finally{setSaving(false)}
+  };
+  const uploadCover=async(file)=>{
+    if(!file) return;
+    setUploading(true);
+    try{
+      const formData=new FormData(); formData.append('file',file);
+      const uploadResponse=await fetch(`${API_URL}/api/uploads`,{method:'POST',body:formData});
+      if(!uploadResponse.ok) throw new Error('cover upload failed');
+      const {url}=await uploadResponse.json();
+      const saveResponse=await fetch(`${API_URL}/api/events/${event.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:event.title,cover_image_url:url})});
+      if(!saveResponse.ok) throw new Error('cover save failed');
+      onUpdate({...event,coverImage:url,coverPositionX:50,coverPositionY:50});
+    }catch(error){alert('เปลี่ยนรูปพื้นหลังไม่สำเร็จ');console.error(error)}
+    finally{setUploading(false)}
+  };
   return <article className="eventCard" onClick={open} onKeyDown={e=>(e.key==="Enter"||e.key===" ")&&open()} role="button" tabIndex="0">
-    <div className={"eventCover "+event.cat.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")}>
+    <div className={"eventCover "+event.cat.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")} style={coverStyle}>
       <span className="coverCat">{event.cat}</span>
       <h3>{event.title}</h3>
+      {isAdmin&&<div className="cardAdminActions"><button onClick={e=>{e.stopPropagation();setDraft(event);setEditing(true)}}>✎ แก้ไข</button><input ref={coverInputRef} className="coverInput" type="file" accept="image/*" onChange={e=>{uploadCover(e.target.files[0]);e.target.value=null}}/><button onClick={e=>{e.stopPropagation();coverInputRef.current?.click()}} disabled={uploading}>{uploading?'กำลังอัปโหลด...':'▣ เปลี่ยนรูป'}</button></div>}
     </div>
     <div className="eventBody">
       <Status value={event.status}/>
@@ -143,20 +174,21 @@ function EventCard({event,onOpen}){
       <div className="cardMeta"><span>◉ {event.views} views</span><span>★ {event.rating}</span></div>
       <button className="detailBtn" onClick={e=>{e.stopPropagation();open()}}>ดูรายละเอียด →</button>
     </div>
+    {editing&&<div className="cardEditor" onClick={e=>e.stopPropagation()}><h3>แก้ไขข้อมูล Event</h3><input value={draft.title} onChange={e=>updateDraft('title',e.target.value)} placeholder="ชื่อ Event"/><input value={draft.date} onChange={e=>updateDraft('date',e.target.value)} placeholder="วันที่จัดงาน"/><input value={draft.place} onChange={e=>updateDraft('place',e.target.value)} placeholder="สถานที่จัดงาน"/><textarea value={draft.desc} onChange={e=>updateDraft('desc',e.target.value)} placeholder="รายละเอียด Event"/><div><button className="btn ghost" onClick={()=>setEditing(false)}>ยกเลิก</button><button className="btn primary" disabled={saving} onClick={save}>{saving?'กำลังบันทึก...':'💾 บันทึก'}</button></div></div>}
   </article>
 }
 
-function Home({onOpen}){
+function Home({events,onOpen,isAdmin,onUpdate}){
   return <>
     <Hero/>
     <section className="section">
       <div className="sectionHead"><div><span className="eyebrow">DISCOVER</span><h2>อีเว้นท์แนะนำ</h2></div><a href="#/events" className="more">ดูทั้งหมด →</a></div>
-      <div className="eventGrid">{events.slice(0,5).map(e=><EventCard key={e.id} event={e} onOpen={onOpen}/>)}</div>
+      <div className="eventGrid">{events.slice(0,5).map(e=><EventCard key={e.id} event={e} onOpen={onOpen} isAdmin={isAdmin} onUpdate={onUpdate}/>)}</div>
     </section>
   </>
 }
 
-function EventsPage({onOpen}){
+function EventsPage({events,onOpen}){
   const [q,setQ]=useState(""); const [cat,setCat]=useState("ทั้งหมด");
   const cats=["ทั้งหมด","Technology","Gaming","Food & Beverage","Automotive","Sport","Art & Culture"];
   const filtered=useMemo(()=>events.filter(e=>(cat==="ทั้งหมด"||e.cat===cat)&&e.title.toLowerCase().includes(q.toLowerCase())),[q,cat]);
@@ -168,9 +200,13 @@ function EventsPage({onOpen}){
   </main>
 }
 
-function EventDetail({event,isAdmin,onBack}){
+function EventDetail({event,isAdmin,visitor,onBack,onUpdate}){
   const [status,setStatus]=useState(event.status);
   const [edit,setEdit]=useState(false);
+  const [eventEdit,setEventEdit]=useState(false);
+  const [eventDraft,setEventDraft]=useState(event);
+  const [eventSaving,setEventSaving]=useState(false);
+  const [coverPosition,setCoverPosition]=useState({x:event.coverPositionX??50,y:event.coverPositionY??50});
   const [text,setText]=useState("บันทึกประสบการณ์ของ PS Event GO! เพิ่มเรื่องราว รูปภาพ และความรู้สึกหลังเข้าร่วมงานได้ที่นี่");
   const [images,setImages]=useState([]);
   const [savedImages,setSavedImages]=useState([]);
@@ -181,7 +217,13 @@ function EventDetail({event,isAdmin,onBack}){
   const [gallerySource,setGallerySource]=useState(null);
   const [lightboxImage,setLightboxImage]=useState(null);
   const fileInputRef = React.useRef(null);
+  const coverInputRef = React.useRef(null);
   const [uploadSource,setUploadSource]=useState(null);
+  const [coverUploading,setCoverUploading]=useState(false);
+  const [comments,setComments]=useState([]);
+  const [commentDraft,setCommentDraft]=useState('');
+  const [commentOpen,setCommentOpen]=useState(false);
+  const [commentSaving,setCommentSaving]=useState(false);
   const galleryLabels={event:'รูปภาพ Event',atmosphere:'บรรยากาศ',activity:'กิจกรรม'};
   const getGalleryImages=(source)=>savedImages.filter((image,index)=>image.gallery_section===source||(!image.gallery_section&&index%3===Object.keys(galleryLabels).indexOf(source)));
   const openGallery=(source)=>setGallerySource(source);
@@ -192,6 +234,7 @@ function EventDetail({event,isAdmin,onBack}){
     else fileInputRef.current?.click();
   };
   useEffect(()=>{(async()=>{try{const r=await fetch(`${API_URL}/api/events/${event.id}/images`);if(r.ok){const j=await r.json();setSavedImages(j);} }catch(e){}})()},[event.id]);
+  useEffect(()=>{fetch(`${API_URL}/api/events/${event.id}/comments`).then(r=>r.ok?r.json():[]).then(setComments).catch(()=>{})},[event.id]);
   const deleteImage = async (imageId)=>{
     if(!confirm('ลบรูปภาพนี้?')) return;
     try{
@@ -261,14 +304,60 @@ function EventDetail({event,isAdmin,onBack}){
       }catch(e){console.error('upload error',e)}
     }
   };
+  const uploadCover = async (file)=>{
+    if(!file||!isAdmin) return;
+    setCoverUploading(true);
+    try{
+      const formData=new FormData(); formData.append('file',file);
+      const uploadResponse=await fetch(`${API_URL}/api/uploads`,{method:'POST',body:formData});
+      if(!uploadResponse.ok) throw new Error('cover upload failed');
+      const {url}=await uploadResponse.json();
+      const saveResponse=await fetch(`${API_URL}/api/events/${event.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:event.title,cover_image_url:url})});
+      if(!saveResponse.ok) throw new Error('cover save failed');
+      onUpdate({...event,coverImage:url,coverPositionX:50,coverPositionY:50});
+    }catch(error){alert('เปลี่ยนรูปพื้นหลังไม่สำเร็จ กรุณาตรวจสอบ backend');console.error(error)}
+    finally{setCoverUploading(false)}
+  };
+  const moveCover = async (axis, amount)=>{
+    const next={...coverPosition,[axis]:Math.max(0,Math.min(100,coverPosition[axis]+amount))};
+    setCoverPosition(next);
+    try{
+      const response=await fetch(`${API_URL}/api/events/${event.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:event.title,cover_position_x:next.x,cover_position_y:next.y})});
+      if(!response.ok) throw new Error('cover position save failed');
+      onUpdate({...event,coverPositionX:next.x,coverPositionY:next.y});
+    }catch(error){console.error(error)}
+  };
+  const saveEvent = async ()=>{
+    setEventSaving(true);
+    try{
+      const response=await fetch(`${API_URL}/api/events/${event.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:eventDraft.title,description:eventDraft.desc,date:eventDraft.date,place:eventDraft.place,status:eventDraft.status||'published'})});
+      if(!response.ok) throw new Error('save event failed');
+      onUpdate({...event,...eventDraft});
+      setEventEdit(false);
+    }catch(error){alert('บันทึกข้อมูลอีเวนต์ไม่สำเร็จ กรุณาตรวจสอบ backend');console.error(error)}
+    finally{setEventSaving(false)}
+  };
+  const saveComment = async ()=>{
+    if(!commentDraft.trim()) return;
+    if(!visitor&&!isAdmin) return alert('กรุณาเข้าสู่ระบบก่อนเขียนคอมเมนต์');
+    setCommentSaving(true);
+    try{
+      const response=await fetch(`${API_URL}/api/events/${event.id}/comments`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:commentDraft,userId:visitor?.id})});
+      if(!response.ok) throw new Error('comment save failed');
+      const comment=await response.json();
+      setComments(prev=>[comment,...prev]); setCommentDraft(''); setCommentOpen(false);
+    }catch(error){alert('ส่งคอมเมนต์ไม่สำเร็จ กรุณาตรวจสอบ backend');console.error(error)}
+    finally{setCommentSaving(false)}
+  };
   return <main className="section detailPage">
     <button className="back" onClick={onBack}>← กลับไปอีเว้นท์</button>
-    <div className="detailHero"><div className="detailCover"><span>{event.cat}</span><h1>{event.title}</h1></div><div className="detailInfo"><Status value={status}/><h1>{event.title}</h1><p>▣ {event.date}</p><p>⌖ {event.place}</p><p>{event.desc}</p><div className="detailStats"><span>◉ {event.views} views</span><span>★ {event.rating}</span></div></div></div>
+    <div className="detailHero"><div className="detailCover" style={event.coverImage?{backgroundImage:`linear-gradient(180deg, #070a1133 20%, #070a11dd 100%), url("${event.coverImage}")`,backgroundPosition:`${coverPosition.x}% ${coverPosition.y}%`}:{}}><span>{event.cat}</span><h1>{event.title}</h1>{isAdmin&&<><input ref={coverInputRef} className="coverInput" type="file" accept="image/*" onChange={e=>{uploadCover(e.target.files[0]);e.target.value=null}}/><div className="coverControls"><button className="coverEditBtn" disabled={coverUploading} onClick={()=>coverInputRef.current?.click()}>{coverUploading?'กำลังอัปโหลด...':'▣ เปลี่ยนรูปพื้นหลัง'}</button>{event.coverImage&&<div className="coverMoveButtons" aria-label="ปรับตำแหน่งรูปพื้นหลัง"><button title="เลื่อนขึ้น" onClick={()=>moveCover('y',-5)}>↑</button><button title="เลื่อนลง" onClick={()=>moveCover('y',5)}>↓</button><button title="เลื่อนไปทางซ้าย" onClick={()=>moveCover('x',-5)}>←</button><button title="เลื่อนไปทางขวา" onClick={()=>moveCover('x',5)}>→</button></div>}</div></>}</div><div className="detailInfo"><div className="panelHead"><Status value={status}/>{isAdmin&&<button className="editBtn" onClick={()=>{setEventDraft(event);setEventEdit(true)}}>✎ แก้ไข Event</button>}</div><h1>{event.title}</h1><p>▣ {event.date}</p><p>⌖ {event.place}</p><p className="experienceText">{event.desc}</p><div className="detailStats"><span>◉ {event.views} views</span><span>★ {event.rating}</span></div></div></div>
+    {eventEdit&&<section className="panel editor eventEditor"><h3>แก้ไขข้อมูล Event</h3><input value={eventDraft.title} onChange={e=>setEventDraft({...eventDraft,title:e.target.value})} placeholder="ชื่อ Event"/><input value={eventDraft.date} onChange={e=>setEventDraft({...eventDraft,date:e.target.value})} placeholder="วันที่จัดงาน"/><input value={eventDraft.place} onChange={e=>setEventDraft({...eventDraft,place:e.target.value})} placeholder="สถานที่จัดงาน"/><textarea value={eventDraft.desc} onChange={e=>setEventDraft({...eventDraft,desc:e.target.value})} placeholder="รายละเอียด Event"/><div><button className="btn ghost" onClick={()=>setEventEdit(false)}>ยกเลิก</button><button className="btn primary" disabled={eventSaving} onClick={saveEvent}>{eventSaving?'กำลังบันทึก...':'💾 บันทึกข้อมูล Event'}</button></div></section>}
     <div className="detailColumns">
       <div>
         <section className="panel">
           <div className="panelHead"><div><span className="eyebrow">OUR EXPERIENCE</span><h2>ประสบการณ์ของ PS Event GO!</h2></div>{isAdmin&&<button className="editBtn" onClick={()=>setEdit(true)}>✎ Edit</button>}</div>
-          <p>{text}</p>
+          <p className="experienceText">{text}</p>
           <div className="photoRow">
             {[['event','📷 รูปภาพ Event'],['atmosphere','📷 บรรยากาศ'],['activity','📷 กิจกรรม']].map(([source,label],index)=>{
               const galleryImages=getGalleryImages(source);
@@ -336,7 +425,7 @@ function EventDetail({event,isAdmin,onBack}){
               setEdit(false);setImages([]);
             }}>💾 บันทึก</button></div></div>}
         </section>
-        <section className="panel"><span className="eyebrow">COMMUNITY EXPERIENCE</span><h2>ประสบการณ์จากผู้เข้าร่วม</h2><div className="comment"><b>ผู้เข้าร่วมงาน</b><p>งานจัดได้ดีมาก บรรยากาศสนุก และมีอะไรให้เดินดูเยอะครับ!</p></div><div className="comment"><b>Event Community</b><p>ใครไปงานนี้มาแล้ว มาแชร์ประสบการณ์กันได้เลย</p></div></section>
+        <section className="panel"><div className="panelHead"><div><span className="eyebrow">COMMUNITY EXPERIENCE</span><h2>ประสบการณ์จากผู้เข้าร่วม</h2></div><button className="editBtn" onClick={()=>setCommentOpen(prev=>!prev)}>＋ เขียนคอมเมนต์</button></div>{commentOpen&&<div className="commentEditor"><textarea value={commentDraft} onChange={e=>setCommentDraft(e.target.value)} placeholder="เขียนคอมเมนต์ของคุณ..."/><div><button className="btn ghost" onClick={()=>setCommentOpen(false)}>ยกเลิก</button><button className="btn primary" disabled={commentSaving} onClick={saveComment}>{commentSaving?'กำลังส่ง...':'ส่งคอมเมนต์'}</button></div></div>}{comments.length===0&&<p className="emptyComments">ยังไม่มีคอมเมนต์ มาแบ่งปันประสบการณ์กันได้เลย</p>}{comments.map(comment=><div className="comment" key={comment.id}><div className="commentAvatar">{comment.author_avatar?<img src={comment.author_avatar} alt=""/>:(comment.author||'ผ').trim().charAt(0)}</div><div className="commentContent"><b>{comment.author}</b><p className="experienceText">{comment.content}</p></div></div>)}</section>
       </div>
       <aside className="panel attendance"><h2>สถานะของคุณ</h2>{isAdmin?[["attended","🟢 ฉันเข้าร่วมแล้ว"],["planned","🔵 กำลังจะไป"],["not_attended","🔴 ไม่ได้เข้าร่วม"]].map(([v,t])=><button key={v} className={status===v?"attendanceBtn selected":"attendanceBtn"} onClick={()=>setStatus(v)}>{t}</button>):<div className="currentStatus"><Status value={status}/></div>}</aside>
     </div>
@@ -354,17 +443,20 @@ function Admin({eventsList,onOpen}){
 function App(){
   const [path,setPath]=useState(location.hash.slice(1)||"/");
   const [isAdmin,setIsAdmin]=useState(false);
+  const [eventsList,setEventsList]=useState(initialEvents);
   const [visitor,setVisitor]=useState(()=>{try{return JSON.parse(localStorage.getItem("ps-event-go-user"))}catch{return null}});
   const [selected,setSelected]=useState(null);
+  useEffect(()=>{fetch(`${API_URL}/api/events`).then(r=>r.ok?r.json():[]).then(serverEvents=>{setEventsList(prev=>prev.map(event=>{const saved=serverEvents.find(item=>Number(item.id)===event.id);return saved?{...event,title:saved.title,desc:saved.description||event.desc,date:saved.display_date||event.date,place:saved.display_place||event.place,coverImage:saved.cover_image_url||event.coverImage,coverPositionX:saved.cover_position_x??event.coverPositionX,coverPositionY:saved.cover_position_y??event.coverPositionY}:event}))}).catch(()=>{})},[]);
   useEffect(()=>{const f=()=>setPath(location.hash.slice(1)||"/");addEventListener("hashchange",f);return()=>removeEventListener("hashchange",f)},[]);
-  useEffect(()=>{if(path.startsWith("/events/"))setSelected(events.find(e=>e.id===Number(path.split("/")[2]))||events[0])},[path]);
+  useEffect(()=>{if(path.startsWith("/events/"))setSelected(eventsList.find(e=>e.id===Number(path.split("/")[2]))||eventsList[0])},[path,eventsList]);
   useEffect(()=>{
     if(!visitor)return;
     const eventId=path.startsWith("/events/")?Number(path.split("/")[2]):null;
     fetch(`${API_URL}/api/page-views`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({userId:visitor.id,eventId,path})}).catch(()=>{});
   },[path,visitor]);
-  const open=id=>{setSelected(events.find(e=>e.id===id));location.hash="/events/"+id};
-  let content=path==="/events"?<EventsPage onOpen={open}/>:path==="/experiences"?<Experiences/>:path==="/calendar"?<Calendar/>:path==="/admin"&&isAdmin?<Admin eventsList={events} onOpen={open}/>:selected&&path.startsWith("/events/")?<EventDetail event={selected} isAdmin={isAdmin} onBack={()=>{setSelected(null);location.hash="/events"}}/>:<Home onOpen={open}/>;
+  const open=id=>{setSelected(eventsList.find(e=>e.id===id));location.hash="/events/"+id};
+  const updateEvent=updated=>{setEventsList(prev=>prev.map(e=>e.id===updated.id?updated:e));setSelected(updated)};
+  let content=path==="/events"?<EventsPage events={eventsList} onOpen={open}/>:path==="/experiences"?<Experiences/>:path==="/calendar"?<Calendar/>:path==="/admin"&&isAdmin?<Admin eventsList={eventsList} onOpen={open}/>:selected&&path.startsWith("/events/")?<EventDetail event={selected} isAdmin={isAdmin} visitor={visitor} onUpdate={updateEvent} onBack={()=>{setSelected(null);location.hash="/events"}}/>:<Home events={eventsList} onOpen={open} isAdmin={isAdmin} onUpdate={updateEvent}/>;
   return <><Nav isAdmin={isAdmin} setIsAdmin={setIsAdmin} visitor={visitor} onVisitorLogin={setVisitor} onVisitorLogout={()=>{localStorage.removeItem("ps-event-go-user");setVisitor(null)}}/>{content}<footer><Logo/><p>Event Media & Community · PS Event GO!</p></footer></>
 }
 createRoot(document.getElementById("root")).render(<App/>);
