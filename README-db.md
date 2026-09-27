@@ -12,7 +12,7 @@ This starts Postgres and initializes the schema from `database/schema.sql`.
 3. Create a `.env` file in `backend` or at project root with:
 
 ```
-DATABASE_URL=postgresql://ps_event:ps_event_pass@localhost:5432/ps_event_dev
+DATABASE_URL=postgresql://ps_event:ps_event_pass@localhost:5433/ps_event_dev
 ```
 
 4. Start backend (if not already running):

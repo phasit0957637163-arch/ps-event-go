@@ -10,9 +10,6 @@ dotenv.config();
 const {Pool}=pg;
 const app=express();
 const pool=new Pool({connectionString:process.env.DATABASE_URL});
-const imageSchemaReady=pool.query('ALTER TABLE event_images ADD COLUMN IF NOT EXISTS gallery_section VARCHAR(30)').then(()=>pool.query("UPDATE event_images SET gallery_section='event' WHERE gallery_section IS NULL")).catch(e=>console.error('event_images migration error',e.message));
-const eventDisplaySchemaReady=pool.query('ALTER TABLE events ADD COLUMN IF NOT EXISTS display_date VARCHAR(120)').then(()=>pool.query('ALTER TABLE events ADD COLUMN IF NOT EXISTS display_place VARCHAR(255)')).catch(e=>console.error('events display migration error',e.message));
-const eventCoverSchemaReady=eventDisplaySchemaReady.then(()=>pool.query('ALTER TABLE events ADD COLUMN IF NOT EXISTS cover_position_x INT DEFAULT 50')).then(()=>pool.query('ALTER TABLE events ADD COLUMN IF NOT EXISTS cover_position_y INT DEFAULT 50')).catch(e=>console.error('event cover migration error',e.message));
 // Ensure uploads folder exists and serve it
 const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
 import fs from 'fs';
@@ -31,21 +28,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 app.use(cors()); app.use(express.json());
 app.get('/api/health',async(req,res)=>{try{const r=await pool.query('SELECT NOW() AS now');res.json({ok:true,database:'connected',time:r.rows[0].now})}catch(e){res.status(500).json({ok:false,error:e.message})}});
-app.get('/api/events',async(req,res)=>{try{await eventCoverSchemaReady;const r=await pool.query('SELECT id,title,description,start_at,end_at,status,display_date,display_place,cover_image_url,cover_position_x,cover_position_y FROM events ORDER BY start_at NULLS LAST');res.json(r.rows)}catch(e){res.status(500).json({error:e.message})}});
-app.patch('/api/events/:id', async (req, res) => {
-	const { id } = req.params;
-	const { title, description, date, place, cover_image_url, cover_position_x, cover_position_y, start_at, end_at, status } = req.body;
-	if (!title || !title.trim()) return res.status(400).json({ error: 'title is required' });
-	try {
-		await eventCoverSchemaReady;
-		const result = await pool.query(`UPDATE events
-			SET title=$1, description=$2, display_date=$3, display_place=$4, cover_image_url=COALESCE($5,cover_image_url), cover_position_x=COALESCE($6,cover_position_x), cover_position_y=COALESCE($7,cover_position_y), start_at=COALESCE($8,start_at), end_at=COALESCE($9,end_at), status=COALESCE($10,status), updated_at=NOW()
-			WHERE id=$11 RETURNING id,title,description,display_date,display_place,cover_image_url,cover_position_x,cover_position_y,start_at,end_at,status`,
-			[title.trim(), description || null, date || null, place || null, cover_image_url || null, cover_position_x ?? null, cover_position_y ?? null, start_at || null, end_at || null, status || 'published', id]);
-		if (result.rows.length === 0) return res.status(404).json({ error: 'event not found' });
-		res.json(result.rows[0]);
-	} catch (e) { res.status(500).json({ error: e.message }); }
-});
+app.get('/api/events',async(req,res)=>{try{const r=await pool.query('SELECT id,title,description,start_at,end_at,status FROM events ORDER BY start_at NULLS LAST');res.json(r.rows)}catch(e){res.status(500).json({error:e.message})}});
 app.post('/api/auth/register',async(req,res)=>{
 	const {name,email,provider}=req.body;
 	if(!name||!email||!['facebook','instagram','email'].includes(provider))return res.status(400).json({error:'name, email and provider are required'});
@@ -57,26 +40,6 @@ app.post('/api/auth/register',async(req,res)=>{
 		await pool.query('INSERT INTO login_logs(user_id,provider,success,user_agent) VALUES($1,$2,TRUE,$3)',[user.id,provider,req.get('user-agent')||null]);
 		res.json(user);
 	}catch(e){res.status(500).json({error:e.message})}
-});
-app.get('/api/events/:id/comments', async (req, res) => {
-	try {
-		const result = await pool.query(`SELECT c.id,c.content,c.created_at,COALESCE(u.name,'ผู้เข้าร่วมงาน') AS author,u.avatar_url AS author_avatar
-			FROM comments c LEFT JOIN users u ON u.id=c.user_id WHERE c.event_id=$1 ORDER BY c.created_at DESC`, [req.params.id]);
-		res.json(result.rows);
-	} catch (e) { res.status(500).json({ error: e.message }); }
-});
-app.post('/api/events/:id/comments', async (req, res) => {
-	const { content, userId } = req.body;
-	if (!content || !content.trim()) return res.status(400).json({ error: 'content is required' });
-	try {
-		const result = await pool.query(`WITH inserted AS (
-			INSERT INTO comments(event_id,user_id,content) VALUES($1,$2,$3)
-			RETURNING id,content,created_at,user_id
-		) SELECT i.id,i.content,i.created_at,COALESCE(u.name,'ผู้เข้าร่วมงาน') AS author,
-			u.avatar_url AS author_avatar FROM inserted i LEFT JOIN users u ON u.id=i.user_id`,
-			[req.params.id, userId || null, content.trim()]);
-		res.status(201).json(result.rows[0]);
-	} catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.post('/api/page-views',async(req,res)=>{
 	const {userId,eventId,path}=req.body;
@@ -114,11 +77,10 @@ app.post('/api/uploads', upload.single('file'), (req, res) => {
 // Save uploaded image URL to event_images
 app.post('/api/events/:id/images', async (req, res) => {
 	const { id } = req.params;
-	const { url, caption, sort_order, gallery_section } = req.body;
+	const { url, caption, sort_order } = req.body;
 	if (!url) return res.status(400).json({ error: 'url is required' });
 	try {
-		await imageSchemaReady;
-		const r = await pool.query('INSERT INTO event_images(event_id,image_url,caption,sort_order,gallery_section) VALUES($1,$2,$3,$4,$5) RETURNING *', [id, url, caption||null, sort_order||0, gallery_section||'event']);
+		const r = await pool.query('INSERT INTO event_images(event_id,image_url,caption,sort_order) VALUES($1,$2,$3,$4) RETURNING *', [id, url, caption||null, sort_order||0]);
 		res.status(201).json(r.rows[0]);
 	} catch (e) {
 		res.status(500).json({ error: e.message });
@@ -128,8 +90,7 @@ app.post('/api/events/:id/images', async (req, res) => {
 app.get('/api/events/:id/images', async (req, res) => {
 	const { id } = req.params;
 	try {
-		await imageSchemaReady;
-		const r = await pool.query('SELECT id,event_id,image_url,caption,sort_order,gallery_section FROM event_images WHERE event_id=$1 ORDER BY sort_order, id', [id]);
+		const r = await pool.query('SELECT id,event_id,image_url,caption,sort_order FROM event_images WHERE event_id=$1 ORDER BY sort_order, id', [id]);
 		res.json(r.rows);
 	} catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -139,7 +100,7 @@ app.patch('/api/events/:id/images/:imageId', async (req, res) => {
 	const { id, imageId } = req.params;
 	const { caption, sort_order } = req.body;
 	try {
-		const r = await pool.query('UPDATE event_images SET caption=COALESCE($1,caption), sort_order=COALESCE($2,sort_order) WHERE id=$3 AND event_id=$4 RETURNING id,event_id,image_url,caption,sort_order,gallery_section', [caption, sort_order, imageId, id]);
+		const r = await pool.query('UPDATE event_images SET caption=$1, sort_order=$2 WHERE id=$3 AND event_id=$4 RETURNING id,event_id,image_url,caption,sort_order', [caption||null, sort_order||0, imageId, id]);
 		if (r.rows.length === 0) return res.status(404).json({ error: 'not found' });
 		res.json(r.rows[0]);
 	} catch (e) { res.status(500).json({ error: e.message }); }
